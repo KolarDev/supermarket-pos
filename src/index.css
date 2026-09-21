@@ -73,6 +73,27 @@
   --color-danger-800: #991b1b;
   --color-danger-900: #7f1d1d;
   --color-danger-950: #450a0a;
+
+  /* Motion — one token, used by the app shell's page transition. Opacity only:
+     an animated `transform` would make this wrapper a containing block for the
+     `position: fixed` modals and toasts that render inside it. */
+  --animate-page-in: page-in 200ms ease-out;
+
+  @keyframes page-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+/* Unlayered, so it outranks the utility it overrides. */
+@media (prefers-reduced-motion: reduce) {
+  :root .animate-page-in {
+    animation: none;
+  }
 }
 
 @layer base {
@@ -107,4 +128,55 @@
 @utility scrollbar-slim {
   scrollbar-width: thin;
   scrollbar-color: var(--color-slate-300) transparent;
+}
+
+/* ---------------------------------------------------------------------------
+   Print isolation.
+
+   Only the receipt may reach paper. The receipt modal opens from four
+   different screens, so suppressing the app screen-by-screen (which is what
+   `print:hidden` on each page root alone amounts to) is a rule every future
+   screen has to remember. Hiding everything and re-showing the receipt's
+   subtree cannot be forgotten: a screen added tomorrow is covered for free.
+
+   Deliberately unlayered — a layered rule loses to an unlayered one, and this
+   has to outrank the app's own utilities. Note that `visibility` hides paint,
+   not layout: the hidden screens still occupy their height, so the receipt is
+   taken out of flow (`position: absolute`) and pinned to the page origin.
+   Without that it prints below a page of invisible dashboard.
+--------------------------------------------------------------------------- */
+
+/* 80mm thermal roll; `auto` height lets the receipt set the page length.
+   Kept at the top level rather than inside the media query below — `@page`
+   only has meaning for paged output, and browsers have historically been
+   uneven about honouring it when nested. */
+@page {
+  size: 80mm auto;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  #thermal-receipt-modal,
+  #thermal-receipt-modal * {
+    visibility: visible !important;
+  }
+
+  #thermal-receipt-modal {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+  }
 }

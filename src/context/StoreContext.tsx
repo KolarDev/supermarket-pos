@@ -1,30 +1,46 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { INITIAL_MOVEMENTS, INITIAL_PRODUCTS } from '../data/mockData'
+import { INITIAL_MOVEMENTS, INITIAL_PRODUCTS, INITIAL_SALES } from '../data/mockData'
+import { getOperatorName } from '../data/operators'
 import type {
   AddToCartResult,
   CartItem,
+  NewProductInput,
   PaymentMethod,
   Product,
   Sale,
   StockMovement,
+  StockMovementType,
   UserRole,
 } from '../types/pos'
+import { priceLines, round2 } from '../utils/money'
 
-/** Nigeria's standard VAT rate, applied to the subtotal of every sale. */
-export const VAT_RATE = 0.075
-
-const STORAGE_KEY = 'supermarket-pos.state.v1'
+/**
+ * Bumped from v1 when the seeded sales history landed. A browser holding v1
+ * state would otherwise boot into a dashboard with no trade on it, and the
+ * operator would have to know to press Reset.
+ */
+const STORAGE_KEY = 'supermarket-pos.state.v2'
 /** Receipts are sequential from here so the first demo receipt reads REC-10023. */
 const FIRST_RECEIPT_SEQUENCE = 10023
-
-/** Naira carries kobo — round money at every step so VAT can't drift. */
-const round2 = (value: number) => Math.round(value * 100) / 100
 
 let idCounter = 0
 /** Short, collision-resistant ids for rows created during the session. */
 const makeId = (prefix: string) =>
   `${prefix}-${Date.now().toString(36)}${(idCounter++).toString(36)}`
+
+/**
+ * Allocates the next catalogue id by continuing the `PRD-0nn` series that is
+ * already there, rather than counting the array — a product retired from the
+ * middle of the list would otherwise hand a live line someone else's id.
+ */
+function nextProductId(products: readonly Product[]): string {
+  const highest = products.reduce((max, product) => {
+    const match = /^PRD-(\d+)$/.exec(product.id)
+    return match ? Math.max(max, Number(match[1])) : max
+  }, 0)
+  return `PRD-${String(highest + 1).padStart(3, '0')}`
+}
 
 interface PersistedState {
   products: Product[]
@@ -40,7 +56,7 @@ const seedState = (): PersistedState => ({
   products: INITIAL_PRODUCTS,
   cart: [],
   movements: INITIAL_MOVEMENTS,
-  sales: [],
+  sales: INITIAL_SALES,
   receiptSequence: FIRST_RECEIPT_SEQUENCE,
   currentRole: 'Cashier',
   isOffline: false,
@@ -112,10 +128,35 @@ export interface StoreContextValue {
     amountReceived: number,
     cashierName: string,
   ) => Sale
-  /** Manual correction or delivery. Throws if the product id is unknown. */
-  adjustStock: (productId: string, delta: number, reason: string) => void
+  /**
+   * Manual correction, delivery or write-off. Throws if the product id is
+   * unknown. `type` defaults to ADJUSTMENT but callers should pass the real
+   * reason — PURCHASE and DAMAGE drive the colour coding in the audit ledger.
+   */
+  adjustStock: (
+    productId: string,
+    delta: number,
+    reason: string,
+    type?: StockMovementType,
+  ) => void
+  /**
+   * Adds a catalogue line and returns it. Opening stock is declared to the
+   * ledger as an OPENING_STOCK movement when the count is above zero.
+   *
+   * Throws if the name is blank, or if the barcode or SKU is already in use —
+   * a scanner resolves a code to the first match, so a duplicate would quietly
+   * ring up the wrong product. Callers should surface the message.
+   */
+  addProduct: (input: NewProductInput) => Product
   toggleOfflineMode: () => void
   switchRole: (role: UserRole) => void
+  /**
+   * Puts the seeded catalogue, ledger and sales history back. The demo data is
+   * dated relative to the day it was seeded, so a browser that has been holding
+   * this state for a week needs this to get today's numbers back on the
+   * dashboard. Discards everything rung up in the current session.
+   */
+  resetDemoData: () => void
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null)
@@ -150,15 +191,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [products, cart, movements, sales, receiptSequence, currentRole, isOffline])
 
   const totals = useMemo(() => {
-    const subtotal = round2(
-      cart.reduce((sum, item) => sum + item.product.sellingPrice * item.quantity, 0),
+    const { subtotal, vat, total } = priceLines(
+      cart.map((item) => ({ unitPrice: item.product.sellingPrice, quantity: item.quantity })),
     )
-    const vat = round2(subtotal * VAT_RATE)
     return {
       count: cart.reduce((units, item) => units + item.quantity, 0),
       subtotal,
       vat,
-      total: round2(subtotal + vat),
+      total,
     }
   }, [cart])
 
@@ -238,13 +278,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         throw new Error('Cannot complete a sale with an empty cart.')
       }
 
-      const subtotal = round2(
-        cart.reduce((sum, item) => sum + item.product.sellingPrice * item.quantity, 0),
-      )
+      const subtotalLines = cart.map((item) => ({
+        unitPrice: item.product.sellingPrice,
+        quantity: item.quantity,
+      }))
       // No discount UI yet — the field exists so Sale rows stay forward-compatible.
       const discount = 0
-      const vat = round2(subtotal * VAT_RATE)
-      const total = round2(subtotal + vat - discount)
+      const { subtotal, vat, total } = priceLines(subtotalLines, discount)
 
       if (amountReceived < total) {
         throw new Error(
@@ -300,7 +340,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const adjustStock = useCallback(
-    (productId: string, delta: number, reason: string) => {
+    (productId: string, delta: number, reason: string, type: StockMovementType = 'ADJUSTMENT') => {
       const product = products.find((candidate) => candidate.id === productId)
       if (!product) throw new Error(`Unknown product: ${productId}`)
       if (!Number.isFinite(delta) || delta === 0) return
@@ -309,10 +349,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         id: makeId('MV'),
         productId,
         productName: product.name,
-        type: 'ADJUSTMENT',
+        type,
         quantityDelta: delta,
         reason,
-        user: currentRole,
+        // Record the operator, not the role — the seeded ledger stores names,
+        // and a column mixing "Manager" with "Emeka Balogun" reads as broken.
+        user: getOperatorName(currentRole),
         timestamp: new Date().toISOString(),
       }
 
@@ -328,8 +370,87 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [currentRole, products],
   )
 
+  const addProduct = useCallback(
+    (input: NewProductInput): Product => {
+      const name = input.name.trim()
+      const sku = input.sku.trim()
+      const barcode = input.barcode.trim()
+
+      if (!name) throw new Error('A product needs a name.')
+
+      // A duplicate name is a nuisance; a duplicate code is a wrong sale. The
+      // till resolves a scan to the first match, so these two fields must be
+      // unique across the catalogue for the register to be trustworthy.
+      const clash = products.find(
+        (product) =>
+          product.barcode === barcode || product.sku.trim().toLowerCase() === sku.toLowerCase(),
+      )
+      if (clash) {
+        throw new Error(
+          clash.barcode === barcode
+            ? `Barcode ${barcode} is already on ${clash.name}.`
+            : `SKU ${sku} is already on ${clash.name}.`,
+        )
+      }
+
+      // The store is the last line of defence: a NaN price or a fractional unit
+      // count would spread silently through every total, valuation and margin
+      // that reads it, so both are normalised on the way in.
+      const money = (value: number) => (Number.isFinite(value) ? round2(Math.max(0, value)) : 0)
+      const units = (value: number) => (Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0)
+
+      const product: Product = {
+        id: nextProductId(products),
+        name,
+        sku,
+        barcode,
+        category: input.category,
+        sellingPrice: money(input.sellingPrice),
+        costPrice: money(input.costPrice),
+        stock: units(input.stock),
+        minStock: units(input.minStock),
+        // Nothing renders `image` yet; the field stays on the type so real
+        // photography can be dropped into `public/products/` later.
+        image: '',
+        active: true,
+      }
+
+      setProducts((prev) => [...prev, product])
+
+      // Only a line that opens with units has anything to declare. A movement
+      // of zero would be noise in the audit trail.
+      if (product.stock > 0) {
+        const opening: StockMovement = {
+          id: makeId('MV'),
+          productId: product.id,
+          productName: product.name,
+          type: 'OPENING_STOCK',
+          quantityDelta: product.stock,
+          reason: 'Opening stock — product created',
+          user: getOperatorName(currentRole),
+          timestamp: new Date().toISOString(),
+        }
+        setMovements((prev) => [opening, ...prev])
+      }
+
+      return product
+    },
+    [currentRole, products],
+  )
+
   const toggleOfflineMode = useCallback(() => setIsOffline((prev) => !prev), [])
   const switchRole = useCallback((role: UserRole) => setCurrentRole(role), [])
+
+  const resetDemoData = useCallback(() => {
+    const fresh = seedState()
+    setProducts(fresh.products)
+    setCart(fresh.cart)
+    setMovements(fresh.movements)
+    setSales(fresh.sales)
+    setReceiptSequence(fresh.receiptSequence)
+    setCurrentRole(fresh.currentRole)
+    setIsOffline(fresh.isOffline)
+  }, [])
 
   const value = useMemo<StoreContextValue>(
     () => ({
@@ -349,8 +470,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       clearCart,
       completeSale,
       adjustStock,
+      addProduct,
       toggleOfflineMode,
       switchRole,
+      resetDemoData,
     }),
     [
       products,
@@ -366,8 +489,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       clearCart,
       completeSale,
       adjustStock,
+      addProduct,
       toggleOfflineMode,
       switchRole,
+      resetDemoData,
     ],
   )
 

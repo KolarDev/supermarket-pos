@@ -15,18 +15,29 @@ export type StockMovementType =
   | 'OPENING_STOCK'
   | 'SALE'
   | 'PURCHASE'
+  /** Stock written off — breakage, expiry, theft. Always a negative delta. */
+  | 'DAMAGE'
   | 'ADJUSTMENT'
 
-/** Aisles of a Nigerian supermarket — keeps category filters type-safe. */
-export type ProductCategory =
-  | 'Beverages'
-  | 'Grains & Staples'
-  | 'Dairy & Breakfast'
-  | 'Snacks & Confectionery'
-  | 'Personal Care'
-  | 'Home Care'
-  | 'Baby & Infant'
-  | 'Farm & Fresh'
+/**
+ * Aisles of a Nigerian supermarket — keeps category filters type-safe.
+ *
+ * The list is the source of truth and the union is derived from it, so the
+ * "Add Product" form can render the aisles without a second hand-maintained
+ * array drifting out of step with the type.
+ */
+export const PRODUCT_CATEGORIES = [
+  'Beverages',
+  'Grains & Staples',
+  'Dairy & Breakfast',
+  'Snacks & Confectionery',
+  'Personal Care',
+  'Home Care',
+  'Baby & Infant',
+  'Farm & Fresh',
+] as const
+
+export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number]
 
 /** Derived from `stock` vs `minStock` — never stored, always computed. */
 export type StockStatus = 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK'
@@ -50,6 +61,25 @@ export interface Product {
   image: string
   /** `false` retires a line without deleting its sales history. */
   active: boolean
+}
+
+/**
+ * What the catalogue form collects for a new line.
+ *
+ * `id`, `image` and `active` are deliberately absent: the id is allocated on
+ * insert so two operators cannot pick the same one, a new line is active by
+ * definition, and nothing renders `image` yet.
+ */
+export interface NewProductInput {
+  name: string
+  sku: string
+  barcode: string
+  category: ProductCategory
+  sellingPrice: number
+  costPrice: number
+  /** Opening count. Written to the ledger as an OPENING_STOCK movement if > 0. */
+  stock: number
+  minStock: number
 }
 
 export interface CartItem {
