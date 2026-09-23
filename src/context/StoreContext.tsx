@@ -6,21 +6,31 @@ import type {
   AddToCartResult,
   CartItem,
   NewProductInput,
-  PaymentMethod,
   Product,
   Sale,
   StockMovement,
   StockMovementType,
+  Tender,
   UserRole,
 } from '../types/pos'
 import { priceLines, round2 } from '../utils/money'
+import {
+  normaliseTenders,
+  settlementOf,
+  tenderProblem,
+  tenderTotal,
+} from '../utils/payments'
 
 /**
  * Bumped from v1 when the seeded sales history landed. A browser holding v1
  * state would otherwise boot into a dashboard with no trade on it, and the
  * operator would have to know to press Reset.
+ *
+ * Bumped again to v3 for split payments: a `Sale` now carries a list of tenders
+ * plus a `settlement` summary, so a v2 payload read back would render a receipt
+ * with no payment lines on it. The version in the key is what retires it.
  */
-const STORAGE_KEY = 'supermarket-pos.state.v2'
+const STORAGE_KEY = 'supermarket-pos.state.v3'
 /** Receipts are sequential from here so the first demo receipt reads REC-10023. */
 const FIRST_RECEIPT_SEQUENCE = 10023
 
@@ -120,14 +130,15 @@ export interface StoreContextValue {
    * Rings up the cart: writes the sale, decrements stock, logs a SALE movement
    * per line, clears the cart and returns the completed `Sale`.
    *
-   * Throws on an empty cart or insufficient payment — callers should validate
-   * against `cartTotal` first and surface the message to the operator.
+   * `payments` is one entry per tender, so a bill may be split across cash,
+   * card and transfer. Empty and zero entries are discarded; the sale's single
+   * `settlement` badge is derived from what is left.
+   *
+   * Throws on an empty cart, on nothing tendered, on a short tender, and on
+   * change that the cash portion could not cover — callers should validate
+   * against `tenderProblem` first and surface the message to the operator.
    */
-  completeSale: (
-    paymentMethod: PaymentMethod,
-    amountReceived: number,
-    cashierName: string,
-  ) => Sale
+  completeSale: (payments: Tender[], cashierName: string) => Sale
   /**
    * Manual correction, delivery or write-off. Throws if the product id is
    * unknown. `type` defaults to ADJUSTMENT but callers should pass the real
@@ -269,11 +280,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const clearCart = useCallback(() => setCart([]), [])
 
   const completeSale = useCallback(
-    (
-      paymentMethod: PaymentMethod,
-      amountReceived: number,
-      cashierName: string,
-    ): Sale => {
+    (payments: Tender[], cashierName: string): Sale => {
       if (cart.length === 0) {
         throw new Error('Cannot complete a sale with an empty cart.')
       }
@@ -286,12 +293,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const discount = 0
       const { subtotal, vat, total } = priceLines(subtotalLines, discount)
 
-      if (amountReceived < total) {
-        throw new Error(
-          `Insufficient payment — ₦${total.toLocaleString('en-NG')} due, ` +
-            `₦${amountReceived.toLocaleString('en-NG')} received.`,
-        )
-      }
+      // The panel validates with this same function, so anything it let through
+      // is a bug rather than a message the operator could act on.
+      const problem = tenderProblem(payments, total)
+      if (problem) throw new Error(problem)
+
+      const tenders = normaliseTenders(payments)
+      const amountReceived = tenderTotal(tenders)
 
       const timestamp = new Date().toISOString()
       const receiptNumber = `REC-${receiptSequence}`
@@ -304,8 +312,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         vat,
         discount,
         total,
-        paymentMethod,
-        amountReceived: round2(amountReceived),
+        payments: tenders,
+        settlement: settlementOf(tenders),
+        amountReceived,
         change: round2(amountReceived - total),
         cashier: cashierName,
         timestamp,

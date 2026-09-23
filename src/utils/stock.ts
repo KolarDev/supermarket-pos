@@ -6,12 +6,27 @@ import type { Product, StockMovementType, StockStatus } from '../types/pos'
  * place, so a product can never read "In Stock" on one screen and "Low Stock"
  * on another.
  */
-export const STOCK_BADGES: Record<StockStatus, { label: string; className: string }> = {
-  IN_STOCK: { label: 'In Stock', className: 'bg-success-50 text-success-800 ring-success-200' },
-  LOW_STOCK: { label: 'Low Stock', className: 'bg-warning-50 text-warning-700 ring-warning-200' },
+export const STOCK_BADGES: Record<
+  StockStatus,
+  { label: string; className: string; dot: string }
+> = {
+  IN_STOCK: {
+    label: 'In Stock',
+    className: 'bg-success-50 text-success-800 ring-success-200',
+    // The solid fill for the status dot, used where the pill is too wide to fit
+    // — a product table on a phone. Kept beside the pill colours so the two can
+    // never drift apart.
+    dot: 'bg-success-600',
+  },
+  LOW_STOCK: {
+    label: 'Low Stock',
+    className: 'bg-warning-50 text-warning-700 ring-warning-200',
+    dot: 'bg-warning-500',
+  },
   OUT_OF_STOCK: {
     label: 'Out of Stock',
     className: 'bg-danger-50 text-danger-800 ring-danger-200',
+    dot: 'bg-danger-600',
   },
 }
 

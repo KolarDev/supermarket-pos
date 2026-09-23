@@ -53,7 +53,7 @@ export default function Inventory() {
   }, [movements, search, typeFilter])
 
   return (
-    <div className="space-y-6 p-4 lg:h-full lg:overflow-y-auto lg:p-6 print:hidden">
+    <div className="scrollbar-slim h-full space-y-6 overflow-y-auto p-4 lg:p-6 print:hidden">
       <header>
         <h1 className="text-xl font-semibold tracking-tight text-slate-900">
           Inventory Ledger
@@ -124,7 +124,7 @@ export default function Inventory() {
                   <button
                     type="button"
                     onClick={() => setAdjustingProduct(product)}
-                    className="mt-auto rounded-md bg-brand-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-brand-800"
+                    className="mt-auto min-h-11 rounded-md bg-brand-900 px-3 text-xs font-semibold text-white transition hover:bg-brand-800"
                   >
                     Adjust Stock
                   </button>
@@ -137,7 +137,7 @@ export default function Inventory() {
 
       {/* ================================================ audit trail */}
       <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-4 sm:px-5">
           <div>
             <h2 className="text-base font-semibold text-slate-900">Stock Movement Log</h2>
             <p className="text-xs text-slate-500">
@@ -145,13 +145,13 @@ export default function Inventory() {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex w-full flex-wrap gap-2 sm:w-auto">
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search product or reason…"
               aria-label="Search movements"
-              className="w-56 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-brand-900 focus:ring-2 focus:ring-brand-900/15"
+              className="min-h-11 min-w-0 flex-1 rounded-lg border border-slate-300 px-3 text-sm outline-none transition focus:border-brand-900 focus:ring-2 focus:ring-brand-900/15 sm:w-56 sm:flex-none"
             />
             <select
               value={typeFilter}
@@ -159,7 +159,7 @@ export default function Inventory() {
                 setTypeFilter(event.target.value as StockMovementType | 'ALL')
               }
               aria-label="Filter by movement type"
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-brand-900 focus:ring-2 focus:ring-brand-900/15"
+              className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none transition focus:border-brand-900 focus:ring-2 focus:ring-brand-900/15"
             >
               <option value="ALL">All types</option>
               {MOVEMENT_TYPES.map((type) => (
@@ -176,16 +176,26 @@ export default function Inventory() {
             No movements match the current filters.
           </p>
         ) : (
+          /* A six-column audit table does not fit a handset. Below `lg` it keeps
+             the three columns an operator actually scans for — what moved, which
+             way, and by how much — and folds the reason, timestamp and operator
+             into the product cell as context. */
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[46rem] text-left text-sm">
+            <table className="w-full text-left text-sm lg:min-w-[46rem]">
               <thead>
                 <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                  <th scope="col" className="px-5 py-2.5 font-medium">Timestamp</th>
-                  <th scope="col" className="px-5 py-2.5 font-medium">Product</th>
-                  <th scope="col" className="px-5 py-2.5 font-medium">Type</th>
-                  <th scope="col" className="px-5 py-2.5 text-right font-medium">Qty</th>
-                  <th scope="col" className="px-5 py-2.5 font-medium">Reason</th>
-                  <th scope="col" className="px-5 py-2.5 font-medium">User</th>
+                  <th scope="col" className="hidden px-5 py-2.5 font-medium lg:table-cell">
+                    Timestamp
+                  </th>
+                  <th scope="col" className="px-4 py-2.5 font-medium sm:px-5">Product</th>
+                  <th scope="col" className="px-4 py-2.5 font-medium sm:px-5">Type</th>
+                  <th scope="col" className="px-4 py-2.5 text-right font-medium sm:px-5">Qty</th>
+                  <th scope="col" className="hidden px-5 py-2.5 font-medium lg:table-cell">
+                    Reason
+                  </th>
+                  <th scope="col" className="hidden px-5 py-2.5 font-medium xl:table-cell">
+                    User
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -194,26 +204,37 @@ export default function Inventory() {
                   const isIncrease = movement.quantityDelta > 0
                   return (
                     <tr key={movement.id} className="hover:bg-slate-50">
-                      <td className="whitespace-nowrap px-5 py-3 font-mono text-xs text-slate-500 tabular-nums">
+                      <td className="hidden px-5 py-3 font-mono text-xs whitespace-nowrap text-slate-500 tabular-nums lg:table-cell">
                         {formatDateTime(movement.timestamp)}
                       </td>
-                      <td className="px-5 py-3 text-slate-800">{movement.productName}</td>
-                      <td className="px-5 py-3">
+                      <td className="px-4 py-3 sm:px-5">
+                        <p className="text-slate-800">{movement.productName}</p>
+                        <p className="mt-0.5 text-xs text-slate-500 lg:hidden">
+                          {movement.reason}
+                        </p>
+                        <p className="mt-0.5 font-mono text-xs text-slate-400 tabular-nums lg:hidden">
+                          {formatDateTime(movement.timestamp)} · {movement.user}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 sm:px-5">
                         <span
-                          className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${badge.className}`}
+                          className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${badge.className}`}
                         >
                           {badge.label}
                         </span>
+                        <p className="mt-0.5 text-xs text-slate-500 xl:hidden">{movement.user}</p>
                       </td>
                       <td
-                        className={`px-5 py-3 text-right font-semibold tabular-nums ${
+                        className={`px-4 py-3 text-right font-semibold tabular-nums sm:px-5 ${
                           isIncrease ? 'text-success-700' : 'text-danger-700'
                         }`}
                       >
                         {formatDelta(movement.quantityDelta)}
                       </td>
-                      <td className="px-5 py-3 text-slate-600">{movement.reason}</td>
-                      <td className="whitespace-nowrap px-5 py-3 text-slate-600">
+                      <td className="hidden px-5 py-3 text-slate-600 lg:table-cell">
+                        {movement.reason}
+                      </td>
+                      <td className="hidden px-5 py-3 whitespace-nowrap text-slate-600 xl:table-cell">
                         {movement.user}
                       </td>
                     </tr>

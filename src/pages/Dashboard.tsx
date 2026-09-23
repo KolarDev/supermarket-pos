@@ -19,7 +19,7 @@ import {
 import { ThermalReceiptModal } from '../components/ThermalReceiptModal'
 import { useStore } from '../context/StoreContext'
 import type { Page } from '../types/nav'
-import type { PaymentMethod, Sale } from '../types/pos'
+import type { Sale, Settlement } from '../types/pos'
 import { formatDateTime, formatNaira, formatNairaCompact } from '../utils/format'
 import { buildDailyTrend, recentSales, summariseToday, topSellers } from '../utils/sales'
 import type { DailyTotal, TopSeller } from '../utils/sales'
@@ -33,10 +33,13 @@ const LONG_DATE = new Intl.DateTimeFormat('en-NG', {
   year: 'numeric',
 })
 
-const PAYMENT_BADGES: Record<PaymentMethod, string> = {
+const PAYMENT_BADGES: Record<Settlement, string> = {
   CASH: 'bg-success-50 text-success-800 ring-success-200',
   CARD: 'bg-brand-100 text-brand-800 ring-brand-200',
   TRANSFER: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+  // A sale settled across more than one method. It has to be visibly its own
+  // thing — reading a split sale as "CASH" would overstate the drawer.
+  SPLIT: 'bg-warning-50 text-warning-700 ring-warning-200',
 }
 
 interface KpiProps {
@@ -263,7 +266,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (page: Page) => 
 
   return (
     <>
-      <div className="space-y-6 p-4 lg:h-full lg:overflow-y-auto lg:p-6 print:hidden">
+      <div className="scrollbar-slim h-full space-y-6 overflow-y-auto p-4 lg:p-6 print:hidden">
         <header className="flex flex-wrap items-end justify-between gap-2">
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">
@@ -327,42 +330,59 @@ export default function Dashboard({ onNavigate }: { onNavigate: (page: Page) => 
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[48rem] text-left text-sm">
+              <table className="w-full text-left text-sm lg:min-w-[48rem]">
                 <thead>
                   <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                    <th scope="col" className="px-5 py-2.5 font-medium">Receipt</th>
-                    <th scope="col" className="px-5 py-2.5 font-medium">Date &amp; Time</th>
-                    <th scope="col" className="px-5 py-2.5 font-medium">Cashier</th>
-                    <th scope="col" className="px-5 py-2.5 font-medium">Payment</th>
-                    <th scope="col" className="px-5 py-2.5 text-right font-medium">Total</th>
-                    <th scope="col" className="px-5 py-2.5 text-right font-medium">Action</th>
+                    <th scope="col" className="px-4 py-2.5 font-medium sm:px-5">Receipt</th>
+                    <th scope="col" className="hidden px-5 py-2.5 font-medium lg:table-cell">
+                      Date &amp; Time
+                    </th>
+                    <th scope="col" className="hidden px-5 py-2.5 font-medium xl:table-cell">
+                      Cashier
+                    </th>
+                    <th scope="col" className="px-4 py-2.5 font-medium sm:px-5">Payment</th>
+                    <th scope="col" className="px-4 py-2.5 text-right font-medium sm:px-5">Total</th>
+                    <th scope="col" className="px-4 py-2.5 text-right font-medium sm:px-5">
+                      Action
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {recent.map((sale) => (
                     <tr key={sale.id} className="hover:bg-slate-50">
-                      <td className="px-5 py-3 font-mono text-xs font-medium text-slate-900">
-                        {sale.receiptNumber}
+                      {/* Below `lg` the date and the cashier fold in under the
+                          receipt number rather than forcing the table to scroll
+                          sideways — the same facts, one column narrower. */}
+                      <td className="px-4 py-3 sm:px-5">
+                        <p className="font-mono text-xs font-medium text-slate-900">
+                          {sale.receiptNumber}
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-500 tabular-nums lg:hidden">
+                          {formatDateTime(sale.timestamp)}
+                        </p>
+                        <p className="mt-0.5 text-xs text-slate-500 xl:hidden">{sale.cashier}</p>
                       </td>
-                      <td className="px-5 py-3 whitespace-nowrap text-slate-600 tabular-nums">
+                      <td className="hidden px-5 py-3 whitespace-nowrap text-slate-600 tabular-nums lg:table-cell">
                         {formatDateTime(sale.timestamp)}
                       </td>
-                      <td className="px-5 py-3 text-slate-700">{sale.cashier}</td>
-                      <td className="px-5 py-3">
+                      <td className="hidden px-5 py-3 text-slate-700 xl:table-cell">
+                        {sale.cashier}
+                      </td>
+                      <td className="px-4 py-3 sm:px-5">
                         <span
-                          className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${PAYMENT_BADGES[sale.paymentMethod]}`}
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${PAYMENT_BADGES[sale.settlement]}`}
                         >
-                          {sale.paymentMethod}
+                          {sale.settlement}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-right font-semibold text-slate-900 tabular-nums">
+                      <td className="px-4 py-3 text-right font-semibold text-slate-900 tabular-nums sm:px-5">
                         {formatNaira(sale.total)}
                       </td>
-                      <td className="px-5 py-3 text-right">
+                      <td className="px-4 py-3 text-right sm:px-5">
                         <button
                           type="button"
                           onClick={() => setReceiptSale(sale)}
-                          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold whitespace-nowrap text-slate-700 transition hover:bg-slate-100"
+                          className="min-h-9 rounded-md border border-slate-300 px-3 text-xs font-semibold whitespace-nowrap text-slate-700 transition hover:bg-slate-100"
                         >
                           View Receipt
                         </button>

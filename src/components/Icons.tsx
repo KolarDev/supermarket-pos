@@ -124,6 +124,42 @@ export const PlusIcon = (props: IconProps) => (
   </Glyph>
 )
 
+export const MinusIcon = (props: IconProps) => (
+  <Glyph {...props}>
+    <path d="M5 12h14" />
+  </Glyph>
+)
+
+/** Hamburger — opens the navigation drawer below `md`. */
+export const MenuIcon = (props: IconProps) => (
+  <Glyph {...props}>
+    <path d="M4 6.5h16M4 12h16M4 17.5h16" />
+  </Glyph>
+)
+
+export const CloseIcon = (props: IconProps) => (
+  <Glyph {...props}>
+    <path d="M6.2 6.2 17.8 17.8M17.8 6.2 6.2 17.8" />
+  </Glyph>
+)
+
+/** Trolley — the cart tab and the mobile review bar. */
+export const CartIcon = (props: IconProps) => (
+  <Glyph {...props}>
+    <path d="M2.8 4h2.3l2.3 10.9a1.6 1.6 0 0 0 1.6 1.3h8.1a1.6 1.6 0 0 0 1.6-1.3L20.4 7H6.1" />
+    <circle cx="9.6" cy="19.6" r="1.3" />
+    <circle cx="17.4" cy="19.6" r="1.3" />
+  </Glyph>
+)
+
+/** Tick in a circle — the settled / exact-tender state. */
+export const CheckIcon = (props: IconProps) => (
+  <Glyph {...props}>
+    <circle cx="12" cy="12" r="8.6" />
+    <path d="M8.4 12.3l2.5 2.4 4.7-5" />
+  </Glyph>
+)
+
 /** Sparkle — marks a control that fills a field in for you. */
 export const SparkIcon = (props: IconProps) => (
   <Glyph {...props}>

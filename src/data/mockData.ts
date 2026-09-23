@@ -1,6 +1,7 @@
 import { OPERATOR_NAMES } from './operators'
-import type { CartItem, PaymentMethod, Product, Sale, StockMovement } from '../types/pos'
+import type { CartItem, PaymentMethod, Product, Sale, StockMovement, Tender } from '../types/pos'
 import { priceLines, round2 } from '../utils/money'
+import { normaliseTenders, settlementOf, tenderTotal } from '../utils/payments'
 
 /**
  * Seed data for a mid-sized Nigerian supermarket.
@@ -314,7 +315,14 @@ interface SeedSale {
   receipt: number
   at: string
   cashier: string
-  method: PaymentMethod
+  /** A single-tender sale. Omit when `split` is given instead. */
+  method?: PaymentMethod
+  /**
+   * A mixed-tender sale: `[method, naira]` pairs that must cover the total.
+   * Written out in full rather than as a "balance on card" rule so the seed
+   * table shows the actual money, and a typo fails loudly at import.
+   */
+  split?: [PaymentMethod, number][]
   /** `[productId, quantity]` pairs. */
   lines: [string, number][]
 }
@@ -466,10 +474,16 @@ const SEED_SALES: SeedSale[] = [
   },
   {
     // Wholesale order — the reason this line shows 48 units in the ledger.
+    // Paid part cash and the balance by transfer, which is how a ₦12,900 order
+    // is actually settled here. The only seeded sale that exercises the
+    // receipt's tender breakdown.
     receipt: 10019,
     at: todayAt(186),
     cashier: NGOZI,
-    method: 'TRANSFER',
+    split: [
+      ['CASH', 5000],
+      ['TRANSFER', 7900],
+    ],
     lines: [['PRD-005', 48]],
   },
   {
@@ -501,6 +515,30 @@ function roundTender(total: number): number {
   return Math.ceil(total / note) * note
 }
 
+/**
+ * The tenders a seeded sale was settled with.
+ *
+ * Cash customers hand over notes, which is what gives the receipts realistic
+ * change; card and transfer settle for the exact total. A sale declaring
+ * neither, or a split that does not cover the bill, throws at import rather
+ * than seeding a receipt that cannot be reconciled.
+ */
+function buildTenders(spec: SeedSale, total: number): Tender[] {
+  if (spec.split) {
+    const tenders = normaliseTenders(spec.split.map(([method, amount]) => ({ method, amount })))
+    const paid = tenderTotal(tenders)
+    if (paid < total) {
+      throw new Error(
+        `Seed sale ${spec.receipt} tenders ${paid} against a total of ${total}.`,
+      )
+    }
+    return tenders
+  }
+
+  if (!spec.method) throw new Error(`Seed sale ${spec.receipt} declares no payment method.`)
+  return [{ method: spec.method, amount: spec.method === 'CASH' ? roundTender(total) : total }]
+}
+
 /** Prices a seeded basket exactly as `completeSale` would. */
 function buildSale(spec: SeedSale): Sale {
   const items: CartItem[] = spec.lines.map(([id, quantity]) => {
@@ -513,9 +551,8 @@ function buildSale(spec: SeedSale): Sale {
     items.map((item) => ({ unitPrice: item.product.sellingPrice, quantity: item.quantity })),
   )
 
-  // Card and transfer settle for the exact total; cash customers hand over
-  // notes, which is what gives the receipts realistic change.
-  const amountReceived = spec.method === 'CASH' ? roundTender(total) : total
+  const payments = buildTenders(spec, total)
+  const amountReceived = tenderTotal(payments)
 
   return {
     id: `SALE-${spec.receipt}`,
@@ -525,7 +562,8 @@ function buildSale(spec: SeedSale): Sale {
     vat,
     discount: 0,
     total,
-    paymentMethod: spec.method,
+    payments,
+    settlement: settlementOf(payments),
     amountReceived,
     change: round2(amountReceived - total),
     cashier: spec.cashier,

@@ -16,15 +16,20 @@ export default function App() {
   const [page, setPage] = useState<Page>('dashboard')
 
   return (
-    /* `print:min-h-0` matters: `min-h-screen` would keep a full page of empty
-       layout alive behind the receipt and feed a blank sheet after it. */
-    <div className="flex min-h-screen flex-col bg-slate-100 lg:h-screen print:h-auto print:min-h-0">
+    /* A viewport-locked shell: the chrome never scrolls, each screen owns its
+       own scrolling, and a footer inside a screen can pin to the bottom of the
+       viewport — which is what keeps the cart's Complete Sale button reachable
+       on a phone. `dvh` rather than `vh` so a mobile browser's collapsing
+       address bar does not push the footer under the fold.
+       The print overrides undo all of it: a fixed-height, clipped shell would
+       feed a blank sheet after the receipt. */
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-slate-100 print:h-auto print:min-h-0 print:overflow-visible">
       <Navbar page={page} onNavigate={setPage} />
 
-      {/* Keyed on the page so the fade replays on every switch, and `lg:h-full`
-          so the screens that scroll internally still have a definite height. */}
-      <main className="flex-1 lg:min-h-0">
-        <div key={page} className="animate-page-in lg:h-full">
+      {/* `min-h-0` lets this shrink below its content so the screen inside can
+          scroll rather than stretching the shell past the viewport. */}
+      <main className="min-h-0 flex-1">
+        <div key={page} className="animate-page-in h-full">
           {page === 'dashboard' && <Dashboard onNavigate={setPage} />}
           {page === 'pos' && <POS />}
           {page === 'products' && <Products />}

@@ -18,6 +18,7 @@ anywhere in the app: everything you do is held in React state and mirrored into
   - [Active role selector](#active-role-selector)
   - [Offline mode](#offline-mode)
   - [Data reset](#data-reset)
+- [Running the till on a phone](#running-the-till-on-a-phone)
 - [Dashboard](#dashboard)
 - [POS Register](#pos-register)
 - [Products](#products)
@@ -67,6 +68,10 @@ second consumer of its state — a customer display, a second till — the tab s
 thing that would be swapped for a router, and every screen is already self-contained enough
 to sit behind one.
 
+The shell is **viewport-locked**: the top bar never scrolls away and each screen owns its own
+scrolling. That is what keeps a screen's action button — the till's **Complete Sale**, a
+catalogue row's **Adjust Stock** — reachable at the bottom of a phone without hunting for it.
+
 ---
 
 ## The top navigation bar
@@ -82,10 +87,13 @@ The bar is persistent: it stays pinned to the top of every screen.
 | Online / Offline switch | Right | Simulates the till losing its connection |
 | Reset | Far right | Restores the seeded demo data |
 
-Below the tab bar, when the app is offline, a thin amber banner is pinned to the very top of
-the viewport (above the navbar) so it is visible on every screen:
+Above the bar, when the app is offline, a thin amber banner is pinned to the very top of the
+viewport so it is visible on every screen:
 
 > ⚡ Running in Local Offline Mode. Sales will sync when connection is restored.
+
+Below `md` (768px) the layout changes — see
+[Running the till on a phone](#running-the-till-on-a-phone).
 
 ### Screen tabs
 
@@ -156,6 +164,60 @@ back.
 
 ---
 
+## Running the till on a phone
+
+The whole app is usable on a handset or a handheld terminal — worth showing, because the
+person who actually rings up sales is standing up, holding one.
+
+### The navigation drawer
+
+Below `md` (768px) the four screen tabs and the demo toolbar move off the bar and into a
+**side drawer**:
+
+1. Tap the **hamburger** at the top left. The drawer slides in from the left over a dimmed
+   backdrop.
+2. Tap any screen. The drawer closes itself and the screen behind it has already changed.
+3. Or dismiss it without navigating: tap the backdrop, tap **✕**, or press **Escape**.
+
+While the drawer is closed it is taken out of the tab order and the accessibility tree
+entirely, so a keyboard or screen reader cannot land on a control that is not on screen. Focus
+returns to the hamburger when it closes and moves into the drawer when it opens.
+
+### The till on a small screen
+
+The two-column till (product grid | cart) does not fit a phone, so it becomes a **two-tab
+switch**: **Products** and **Cart**, with a live item count on the cart tab. Only one is on
+screen at a time, so neither is squeezed.
+
+Once the cart has something in it, a **review bar** is pinned to the bottom of the Products
+tab showing the item count and the running total — *N items · ₦X · Review & pay*. Tapping it
+switches to the Cart tab. The **Complete Sale** button sits at the bottom of the Cart tab, so
+after taking payment the cashier never scrolls to find it.
+
+### Touch targets
+
+Every control meant to be tapped is at least **44×44px** — the steppers, the quick-tender
+chips, the tab switch, the drawer rows, the toolbar buttons. The quantity steppers on a cart
+line are joined into one bordered group rather than sitting as two separate buttons, so a
+thumb cannot land in the gap between them and miss.
+
+### The tables
+
+Dashboard, Products and Inventory each shed their least important columns on a narrow screen
+and fold those facts into the row that remains, rather than forcing a sideways scroll:
+
+| Screen | Dropped below `lg` | Folded into |
+| --- | --- | --- |
+| Dashboard | Date & Time, Cashier | under the receipt number |
+| Products | Category, Status | a chip row under the product name |
+| Inventory | Timestamp, Reason, User | under the product name and the type badge |
+
+The stock status badge becomes a coloured dot on the narrowest screens, where the word will
+not fit — the full label is still there for screen readers. `overflow-x-auto` remains as the
+backstop for the very narrowest handsets.
+
+---
+
 ## Dashboard
 
 The manager's view of the store. Every figure is derived from the same `sales` history the
@@ -177,7 +239,8 @@ Hover any bar for the exact figure and sale count. The heading shows the period 
 each bar drawn relative to the best seller. Ties are broken by revenue.
 
 **Recent Transactions** — the last five completed sales. Columns: Receipt, Date & Time,
-Cashier, Payment (colour-coded badge), Total, and **View Receipt**. Clicking **View
+Cashier, Payment, Total, and **View Receipt**. The **Payment** badge reads `CASH`, `CARD`,
+`TRANSFER`, or `SPLIT` for a bill settled across more than one method. Clicking **View
 Receipt** reopens the original 80mm thermal receipt for that sale, from which you can print
 it again.
 
@@ -189,9 +252,11 @@ The till. The layout is a product grid on the left and the current sale on the r
 
 ### Scanning a barcode
 
-The scan field at the top left holds keyboard focus as soon as the screen opens — a barcode
-scanner gun is just a keyboard that types the digits and presses Enter, so the field has to
-already be focused when the trigger is pulled.
+The scan field at the top left holds keyboard focus as soon as the screen opens on a desktop
+— a barcode scanner gun is just a keyboard that types the digits and presses Enter, so the
+field has to already be focused when the trigger is pulled. On a touch device it does not
+grab focus, because popping the on-screen keyboard over the product grid is the opposite of
+helpful.
 
 1. Type or scan a code into the **Scan barcode or type SKU** field.
 2. Press **Enter**.
@@ -228,20 +293,59 @@ the visible products; **All** clears the filter.
    | VAT (7.5%) | 7.5% of subtotal |
    | **Total** | subtotal + VAT |
 
-4. Choose a payment method: **CASH**, **CARD** or **TRANSFER**.
+4. Take payment — see below.
 
-**If the customer pays cash:**
+### Adjusting a cart line
 
-5. Type the amount into **Amount Received (₦)**, or use a note shortcut —
-   ₦1,000 / ₦5,000 / ₦10,000 / ₦20,000.
-6. **Change Due** updates live. If the tender is short, the panel turns red and shows
-   exactly how much is missing rather than a negative change figure.
+Each line carries its own controls:
 
-**If the customer pays by card or transfer:** no tender is entered — the sale settles for
-the exact total and no change is due.
+| Control | Does |
+| --- | --- |
+| **−** | One unit fewer. At the last unit it removes the line, and says so in a toast — a customer changing their mind is not a mistake worth a dialog box. |
+| **+** | One unit more, disabled once the cart holds everything on the shelf. |
+| **quantity box** | Type a number directly — for a wholesale order this is one keystroke against twelve taps. Commits on **Enter** or when you click away. |
+| **✕** | Removes the line outright. |
 
-7. Click **Complete Sale · ₦…**. The button stays disabled until the cart has something in
-   it and, for cash, until the tender covers the total.
+The **+** and **−** buttons and the box are joined into one bordered group, so the three read
+as one control and a thumb cannot slip between them.
+
+The quantity box holds what you are typing rather than pushing every keystroke straight at the
+cart. Typing `120` would otherwise be clamped at `1`, then `12`, on the way past — so the box
+keeps a draft and commits the finished number, then shows whatever the store actually
+accepted. It can never drift from the truth.
+
+### Taking payment
+
+A bill can be **split across cash, card and transfer at the same time** — routine at a
+Nigerian till, where a customer might put ₦4,000 down in notes and settle the balance on a
+card.
+
+There are three tender fields, one per method. Fill in any combination:
+
+1. Type into **Cash**, **Card** and/or **Transfer**. Each is a live field — the panel
+   recalculates as you type.
+2. Watch **Total paid** above the fields: `₦4,000.00 of ₦10,000.00`, over a progress bar that
+   fills as the bill is covered.
+3. Watch the line underneath, which always says exactly where the sale stands:
+
+   | Situation | The panel reads |
+   | --- | --- |
+   | Anything still outstanding | **Remaining balance due** ₦X (red) |
+   | Paid in full, change owed | **Change due** ₦X (green) |
+   | Paid to the kobo | ✓ **Exact amount tendered.** (green) |
+   | Change larger than the cash put down | the rule that blocks it, in red — see below |
+
+**Quick cash tools:** four chips — **₦1,000**, **₦5,000**, **₦10,000**, **₦20,000** — drop a
+note straight into the **Cash** field. Two taps settles most cash sales.
+
+**Strict submit guard:** **Complete Sale · ₦…** stays disabled until the tenders cover the
+grand total. It also stays disabled while the cart is empty.
+
+> **Why change can only come out of the cash.** Paying a ₦10,000 bill with ₦20,000 on a card
+> would leave ₦10,000 "change" the panel could not honestly offer — a card terminal cannot
+> hand back notes, and a transfer certainly cannot. The guard refuses that combination and
+> says so. It is the kind of rule that looks pedantic until you work out how much a drawer
+> loses over a week without it.
 
 **What completing does, all at once:**
 
@@ -250,7 +354,11 @@ the exact total and no change is due.
 - writes one **SALE** movement per line into the audit ledger, reasoned
   `Sold on receipt REC-10023`
 - advances the receipt counter
-- clears the cart, resets the tender, and opens the receipt
+- clears the cart and resets the tender fields
+- opens the receipt
+
+The sale records **every tender taken**, not just a summary: the receipt prints the split, and
+the Dashboard badge reads `SPLIT` so nobody reads a part-cash sale as a full drawer.
 
 ### Printing a receipt
 
@@ -265,9 +373,19 @@ scan field, ready for the next customer.
 
 The receipt itself carries the store header and address, the receipt number, date, cashier
 and role, every line with its quantity and line total, the subtotal / VAT / total block, the
-payment method (with *Received* and *Change* on cash sales), an item count, and a barcode
-drawn from the receipt number — the same receipt always prints the same barcode, so a
-reprint is visually identical to the original.
+payment, an item count, and a barcode drawn from the receipt number — the same receipt always
+prints the same barcode, so a reprint is visually identical to the original.
+
+A split sale prints its tenders itemised, so the customer can check the arithmetic:
+
+```
+Payment                       SPLIT
+  CASH                    ₦5,000.00
+  TRANSFER                ₦7,900.00
+```
+
+A single-tender sale just names the method — `Payment  CARD` — and a cash sale adds
+**Received** and **Change** lines underneath.
 
 ---
 
@@ -284,7 +402,9 @@ discontinued product sitting at zero is not something anyone needs to reorder.
 - The two combine, and the heading shows `N of M products`.
 
 The table lists Product (name, SKU, barcode), Category, Price, Stock Level with its badge,
-Status (Active / Inactive) and an **Adjust Stock** action per row.
+Status (Active / Inactive) and an **Adjust Stock** action per row. On a phone the Category and
+Status columns fold under the product name — see
+[the tables](#the-tables).
 
 ### Adding a product
 
@@ -371,6 +491,9 @@ automatically as each sale completes.
 | **Reason** | The note the operator typed, or the receipt a sale came from |
 | **User** | The operator responsible |
 
+Below `lg` the Timestamp, Reason and User columns fold under the product name so three columns
+survive on a phone instead of six.
+
 The five movement types, and how to read them at a glance:
 
 | Badge | Type | Means | Sign |
@@ -436,6 +559,13 @@ is ever empty:
 Barcodes are structurally valid EAN-13 codes with correct GS1 check digits, and the loose
 goods use the `2` prefix reserved for in-store labels.
 
+**Receipt `REC-10019` is deliberately a split sale** — 48 units on a wholesale order, settled
+₦5,000 cash and ₦7,900 by transfer. It is the one seeded receipt that shows the tender
+breakdown on the thermal print and the `SPLIT` badge on the Dashboard, so the feature is
+visible before anyone rings one up. Every seeded sale is checked at import: a tender table
+that does not cover its own bill throws rather than seeding a receipt that cannot be
+reconciled.
+
 **Two things worth knowing before you demo:**
 
 1. **Timestamps are relative to the day the app first loaded**, not fixed dates. This is
@@ -456,8 +586,9 @@ Worth knowing before someone asks, so the demo holds up:
 | --- | --- |
 | Every figure is computed from live state — a sale moves the dashboard, the ledger and the stock counts together | The **offline mode** toggle (no sync queue exists — there is no backend) |
 | VAT, change, margins, stock arithmetic and barcode check digits are computed correctly | The **operators** — two seeded names, not a login |
-| The audit ledger is written by the same code paths that move stock, so it cannot drift from the receipts | **Payment** — cash, card and transfer are recorded, never processed |
-| Print isolation is real: only the receipt reaches paper | **Persistence** — `localStorage`, not a database |
+| Split-tender arithmetic, including the rule that change can only come out of the cash portion | **Payment** — cash, card and transfer are recorded, never processed |
+| The audit ledger is written by the same code paths that move stock, so it cannot drift from the receipts | **Persistence** — `localStorage`, not a database |
+| Print isolation is real: only the receipt reaches paper | |
 
 ---
 
@@ -466,9 +597,12 @@ Worth knowing before someone asks, so the demo holds up:
 | Key / action | Where | Does |
 | --- | --- | --- |
 | **Enter** | Scan field | Looks up the code and adds it to the cart |
+| **Enter** | Cart quantity box | Commits the typed quantity |
 | **Escape** | Any open dialog | Closes it |
+| **Escape** | Mobile drawer | Closes it |
 | Any typing | POS Register | Filters the product grid |
 | Click a product card | POS Register | Adds one unit |
+| Click a quick-tender chip | POS Register | Drops that note into the Cash field |
 | Click the **Stock Alerts** card | Dashboard | Jumps to Inventory |
 | Click **View Receipt** | Dashboard | Reopens that sale's thermal receipt |
 
@@ -482,12 +616,17 @@ driven from the keyboard.
 Everything lives under a single `localStorage` key:
 
 ```
-supermarket-pos.state.v2
+supermarket-pos.state.v3
 ```
 
 It holds the catalogue, the cart, the movement ledger, the sales history, the receipt
 counter, the selected role and the connection state. It is written after every change and
 read once on boot.
+
+The version in the key is not decoration. A sale used to record a single payment method; it
+now records a **list of tenders**. A browser holding the older payload would render receipts
+with no payment lines on them, so the key was bumped and the stale session is retired rather
+than half-read.
 
 - **To start completely fresh:** press **Reset** in the navbar, or clear that key in your
   browser's dev tools and reload.

@@ -115,9 +115,12 @@ export function ThermalReceiptModal({ sale, onClose }: ThermalReceiptModalProps)
 
   if (!sale) return null
 
-  const { receiptNumber, items, subtotal, vat, total, paymentMethod, amountReceived, change } = sale
+  const { receiptNumber, items, subtotal, vat, total, settlement, payments, amountReceived, change } =
+    sale
   const unitCount = items.reduce((units, item) => units + item.quantity, 0)
-  const isCash = paymentMethod === 'CASH'
+  // A single tender is already named by the `Payment` line; only a split needs
+  // the breakdown spelled out, or the customer cannot check the arithmetic.
+  const isSplit = payments.length > 1
 
   return (
     <div
@@ -204,9 +207,16 @@ export function ThermalReceiptModal({ sale, onClose }: ThermalReceiptModalProps)
           <section className="space-y-0.5 text-[10px]">
             <div className="flex justify-between gap-2">
               <span>Payment</span>
-              <span className="font-bold">{paymentMethod}</span>
+              <span className="font-bold">{settlement}</span>
             </div>
-            {isCash && (
+            {isSplit &&
+              payments.map((tender) => (
+                <div key={tender.method} className="flex justify-between gap-2 pl-2">
+                  <span>{tender.method}</span>
+                  <span className="tabular-nums">{formatNaira(tender.amount)}</span>
+                </div>
+              ))}
+            {change > 0 && (
               <>
                 <div className="flex justify-between gap-2">
                   <span>Received</span>

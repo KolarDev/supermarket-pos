@@ -9,7 +9,31 @@
 /** Who is signed in at the till. Gates stock adjustments and reporting. */
 export type UserRole = 'Cashier' | 'Manager'
 
+/** A tender an operator can actually take across the counter. */
 export type PaymentMethod = 'CASH' | 'CARD' | 'TRANSFER'
+
+/**
+ * One tender handed over at the till.
+ *
+ * A sale holds a *list* of these rather than a single method, because splitting
+ * a bill is routine — a wholesale order part cash and the balance by transfer,
+ * or a customer who is ₦2,000 short on the card. Modelling the single-method
+ * case as a one-element list keeps one shape for both.
+ */
+export interface Tender {
+  method: PaymentMethod
+  /** Naira handed over on this method. Never negative, never zero. */
+  amount: number
+}
+
+/**
+ * How a sale settled, for one-line reporting in list views.
+ *
+ * `'SPLIT'` is a *summary*, not something anyone can hand over — which is why
+ * it is not part of `PaymentMethod` and cannot be used as a `Tender.method`.
+ * The tenders themselves live on `Sale.payments`.
+ */
+export type Settlement = PaymentMethod | 'SPLIT'
 
 export type StockMovementType =
   | 'OPENING_STOCK'
@@ -116,9 +140,23 @@ export interface Sale {
   vat: number
   discount: number
   total: number
-  paymentMethod: PaymentMethod
+  /**
+   * Every tender taken, in the order the operator entered them. Always holds at
+   * least one non-zero entry — a sale with no money against it is not a sale.
+   */
+  payments: Tender[]
+  /**
+   * Denormalised one-line summary of `payments`: the method when a single
+   * tender settled the bill, `'SPLIT'` when several did. Kept as a field so a
+   * list view can badge a sale without walking its tenders.
+   */
+  settlement: Settlement
+  /** Everything handed over, summed across methods. */
   amountReceived: number
-  /** Change handed back; always 0 for CARD and TRANSFER. */
+  /**
+   * Change handed back. Drawn from the cash tender — a card terminal cannot
+   * produce change — so it can never exceed the cash the customer put down.
+   */
   change: number
   cashier: string
   /** ISO-8601. */
