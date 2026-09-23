@@ -24,6 +24,15 @@ export interface Tender {
   method: PaymentMethod
   /** Naira handed over on this method. Never negative, never zero. */
   amount: number
+  /**
+   * What the acquirer or the bank handed back: a card terminal's approval code,
+   * or the reference the customer quoted on a transfer.
+   *
+   * Optional because cash leaves no such trace, and because inventing one for a
+   * seeded cash sale would put a number on a receipt that nothing could ever
+   * reconcile against.
+   */
+  reference?: string
 }
 
 /**

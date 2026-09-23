@@ -160,6 +160,40 @@ export const CheckIcon = (props: IconProps) => (
   </Glyph>
 )
 
+/** Credit card — the Card tender tab. */
+export const CardIcon = (props: IconProps) => (
+  <Glyph {...props}>
+    <rect x="2.6" y="5" width="18.8" height="14" rx="2.2" />
+    <path d="M2.6 9.8h18.8" />
+    <path d="M6.4 14.8h3.6" />
+  </Glyph>
+)
+
+/** A bank — the Transfer tender tab, and the account details to send money to. */
+export const BankIcon = (props: IconProps) => (
+  <Glyph {...props}>
+    <path d="M3.4 9.8 12 4.4l8.6 5.4" />
+    <path d="M5.8 11v6.4M10 11v6.4M14 11v6.4M18.2 11v6.4" />
+    <path d="M3.4 19.6h17.2" />
+  </Glyph>
+)
+
+/** Two sheets — copy the account number to the clipboard. */
+export const CopyIcon = (props: IconProps) => (
+  <Glyph {...props}>
+    <rect x="9.2" y="9.2" width="11" height="11" rx="2" />
+    <path d="M5.8 14.8h-1a1.6 1.6 0 0 1-1.6-1.6V4.8a1.6 1.6 0 0 1 1.6-1.6h8.4a1.6 1.6 0 0 1 1.6 1.6v1" />
+  </Glyph>
+)
+
+/** A shield with a tick — a transfer the ledger has checked and accepted. */
+export const VerifiedIcon = (props: IconProps) => (
+  <Glyph {...props}>
+    <path d="M12 3.4 5 6.2v5.2c0 4 2.9 7.4 7 9.2 4.1-1.8 7-5.2 7-9.2V6.2z" />
+    <path d="M9.2 12.1l2.1 2.1 3.9-4.1" />
+  </Glyph>
+)
+
 /** Sparkle — marks a control that fills a field in for you. */
 export const SparkIcon = (props: IconProps) => (
   <Glyph {...props}>

@@ -18,7 +18,7 @@ export default function App() {
   return (
     /* A viewport-locked shell: the chrome never scrolls, each screen owns its
        own scrolling, and a footer inside a screen can pin to the bottom of the
-       viewport — which is what keeps the cart's Complete Sale button reachable
+       viewport — which is what keeps the cart's checkout trigger reachable
        on a phone. `dvh` rather than `vh` so a mobile browser's collapsing
        address bar does not push the footer under the fold.
        The print overrides undo all of it: a fixed-height, clipped shell would

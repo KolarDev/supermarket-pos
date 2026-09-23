@@ -1,40 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { CheckoutDrawer } from '../components/CheckoutDrawer'
 import { ThermalReceiptModal } from '../components/ThermalReceiptModal'
-import {
-  ArrowRightIcon,
-  CartIcon,
-  CheckIcon,
-  CloseIcon,
-  MinusIcon,
-  PlusIcon,
-  ScanIcon,
-} from '../components/Icons'
+import { ArrowRightIcon, CloseIcon, MinusIcon, PlusIcon, ScanIcon } from '../components/Icons'
 import { useStore } from '../context/StoreContext'
 import { OPERATOR_NAMES } from '../data/operators'
-import type { CartItem, PaymentMethod, Product, ProductCategory, Sale, Tender } from '../types/pos'
+import type { CartItem, Product, ProductCategory, Sale, Tender } from '../types/pos'
 import { formatNaira } from '../utils/format'
-import {
-  TENDER_METHODS,
-  balanceDue,
-  checkoutBanner,
-  tenderProblem,
-  tenderTotal,
-} from '../utils/payments'
+import { round2 } from '../utils/money'
 import { STOCK_BADGES, getStockStatus } from '../utils/stock'
-
-const TENDER_LABELS: Record<PaymentMethod, string> = {
-  CASH: 'Cash',
-  CARD: 'Card',
-  TRANSFER: 'Transfer',
-}
-
-/** Common Nigerian banknotes, for one-tap cash entry. */
-const QUICK_TENDER = [1000, 5000, 10000, 20000]
-
-/** Every tender field empty. Reused on reset — the fields are replaced, never
- *  mutated, so one frozen object is safe to hand back each time. */
-const NO_TENDERS: Record<PaymentMethod, string> = { CASH: '', CARD: '', TRANSFER: '' }
 
 const TOAST_DURATION_MS = 2800
 
@@ -55,6 +29,12 @@ interface CartLineProps {
 /**
  * One row of the current sale.
  *
+ * Deliberately generous with its own height: the operator reads name, unit
+ * price, quantity and line total at a glance while the customer watches, and a
+ * cramped row turns every sale into a squint. The row has three bands — the
+ * product, the stepper, and the remove affordance — so a thumb aiming for the
+ * steppers cannot land on the delete.
+ *
  * The quantity field keeps its own draft string rather than reading straight
  * from the store: committing on every keystroke would fight the operator
  * halfway through typing `120`, clamping `1` and `12` to stock on the way past.
@@ -64,7 +44,7 @@ interface CartLineProps {
 function CartLine({ item, available, onQuantity, onRemove }: CartLineProps) {
   const [draft, setDraft] = useState(String(item.quantity))
 
-  const lineTotal = item.product.sellingPrice * item.quantity
+  const lineTotal = round2(item.product.sellingPrice * item.quantity)
   const atCeiling = item.quantity >= available
 
   /** Sends a quantity to the store and shows whatever the store accepted. */
@@ -83,33 +63,40 @@ function CartLine({ item, available, onQuantity, onRemove }: CartLineProps) {
   }
 
   // At the last unit the decrement drops the line rather than dead-ending on a
-  // disabled button, which is what an operator tapping it means anyway. It is
-  // announced by a toast rather than a confirm dialog: a modal would interrupt
-  // every correction, and the line is one scan away from coming back.
+  // disabled button, which is what an operator tapping it means anyway — a
+  // quantity of zero *is* "remove this". It is announced by a toast rather than
+  // a confirm dialog: a modal would interrupt every correction, and the line is
+  // one scan away from coming back.
   const decrease = () => {
     if (item.quantity <= 1) onRemove(item)
     else apply(item.quantity - 1)
   }
 
   return (
-    <li className="flex flex-col gap-2.5 px-4 py-3">
+    <li className="flex flex-col gap-3 px-4 py-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-slate-800" title={item.product.name}>
+          <p
+            className="text-[15px] font-semibold leading-snug text-slate-800"
+            title={item.product.name}
+          >
             {item.product.name}
           </p>
-          <p className="money mt-0.5 text-xs text-slate-500">
+          <p className="money mt-1 text-xs text-slate-500">
             {formatNaira(item.product.sellingPrice)} each
           </p>
         </div>
-        <span className="money shrink-0 text-sm font-semibold text-slate-900">
-          {formatNaira(lineTotal)}
-        </span>
+        <div className="shrink-0 text-right">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+            Subtotal
+          </p>
+          <p className="money text-base font-bold text-slate-900">{formatNaira(lineTotal)}</p>
+        </div>
       </div>
 
       <div className="flex items-center justify-between gap-2">
         {/* Joined into one bordered group so a thumb cannot land in the gap
-            between two separate buttons. Every part is 44px tall. */}
+            between two separate buttons. Every part is 48px tall. */}
         <div className="flex items-center rounded-lg border border-slate-300 bg-white">
           <button
             type="button"
@@ -119,7 +106,7 @@ function CartLine({ item, available, onQuantity, onRemove }: CartLineProps) {
                 ? `Remove ${item.product.name} from the cart`
                 : `Decrease quantity of ${item.product.name}`
             }
-            className={`flex h-11 w-11 items-center justify-center rounded-l-lg transition hover:bg-slate-100 ${
+            className={`flex h-12 w-12 items-center justify-center rounded-l-lg transition hover:bg-slate-100 ${
               item.quantity <= 1 ? 'text-danger-700' : 'text-slate-700'
             }`}
           >
@@ -138,7 +125,7 @@ function CartLine({ item, available, onQuantity, onRemove }: CartLineProps) {
             }}
             inputMode="numeric"
             aria-label={`Quantity of ${item.product.name}`}
-            className="h-11 w-12 border-x border-slate-200 text-center text-sm font-semibold text-slate-900 tabular-nums outline-none transition focus:bg-brand-50"
+            className="h-12 w-14 border-x border-slate-200 text-center text-sm font-semibold text-slate-900 tabular-nums outline-none transition focus:bg-brand-50"
           />
 
           <button
@@ -146,7 +133,7 @@ function CartLine({ item, available, onQuantity, onRemove }: CartLineProps) {
             onClick={() => apply(item.quantity + 1)}
             disabled={atCeiling}
             aria-label={`Increase quantity of ${item.product.name}`}
-            className="flex h-11 w-11 items-center justify-center rounded-r-lg text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+            className="flex h-12 w-12 items-center justify-center rounded-r-lg text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
           >
             <PlusIcon className="h-4 w-4" />
           </button>
@@ -156,7 +143,7 @@ function CartLine({ item, available, onQuantity, onRemove }: CartLineProps) {
           type="button"
           onClick={() => onRemove(item)}
           aria-label={`Remove ${item.product.name} from the cart`}
-          className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 transition hover:bg-danger-50 hover:text-danger-700"
+          className="flex h-12 w-12 items-center justify-center rounded-lg text-slate-400 transition hover:bg-danger-50 hover:text-danger-700"
         >
           <CloseIcon className="h-4 w-4" />
         </button>
@@ -183,14 +170,15 @@ export default function POS() {
 
   const [scanInput, setScanInput] = useState('')
   const [activeCategory, setActiveCategory] = useState<ProductCategory | 'All'>('All')
-  /** Below `lg` the grid and the cart take turns; at `lg` both are always on. */
-  const [tab, setTab] = useState<'products' | 'cart'>('products')
-  const [tenders, setTenders] = useState<Record<PaymentMethod, string>>(NO_TENDERS)
+  const [checkoutOpen, setCheckoutOpen] = useState(false)
+  /** Remounting the mounted-once drawer gives each cart a clean tender ledger. */
+  const [checkoutSession, setCheckoutSession] = useState(0)
   const [receiptSale, setReceiptSale] = useState<Sale | null>(null)
   const [toast, setToast] = useState<Toast | null>(null)
 
   const scanRef = useRef<HTMLInputElement>(null)
   const cartListRef = useRef<HTMLDivElement>(null)
+  const checkoutButtonRef = useRef<HTMLButtonElement>(null)
   const toastIdRef = useRef(0)
 
   // A scanner gun is just a keyboard: the field must already hold focus when
@@ -256,30 +244,6 @@ export default function POS() {
     if (list) list.scrollTop = list.scrollHeight
   }, [cart.length])
 
-  // ------------------------------------------------------------- tender maths
-  // Every figure below comes from `utils/payments`, the same module the store
-  // validates with — so the button can never be enabled for a sale the store
-  // would refuse, nor disabled for one it would take.
-  const payments = useMemo<Tender[]>(
-    () =>
-      TENDER_METHODS.map((method) => ({
-        method,
-        amount: Number.parseFloat(tenders[method]) || 0,
-      })),
-    [tenders],
-  )
-
-  const paid = tenderTotal(payments)
-  const due = balanceDue(payments, cartTotal)
-  const problem = cartCount > 0 ? tenderProblem(payments, cartTotal) : null
-  /** The one line the panel shows about where the sale stands. */
-  const banner = cartCount > 0 ? checkoutBanner(payments, cartTotal) : null
-  const canComplete = cartCount > 0 && problem === null
-  const paidPercent = cartTotal > 0 ? Math.min(100, (paid / cartTotal) * 100) : 0
-
-  const setTender = (method: PaymentMethod, value: string) =>
-    setTenders((prev) => ({ ...prev, [method]: value }))
-
   const handleScan = (event: FormEvent) => {
     event.preventDefault()
     const code = scanInput.trim()
@@ -288,6 +252,7 @@ export default function POS() {
     const result = addToCart(code)
     if (result.ok) {
       setScanInput('')
+      setCheckoutSession((session) => session + 1)
       notify('success', result.message)
     } else {
       notify('error', result.message)
@@ -297,93 +262,62 @@ export default function POS() {
 
   const handleCardClick = (product: Product) => {
     const result = addToCart(product.id)
-    if (!result.ok) notify('error', result.message)
+    if (result.ok) setCheckoutSession((session) => session + 1)
+    else notify('error', result.message)
     focusScanner()
+  }
+
+  // A tender is priced against an exact basket. Closing checkout preserves the
+  // draft for review, but any actual cart edit starts a fresh tender ledger so
+  // money can never leak into a changed sale.
+  const handleQuantityChange = (productId: string, quantity: number) => {
+    updateCartQuantity(productId, quantity)
+    setCheckoutSession((session) => session + 1)
   }
 
   const handleRemoveLine = (item: CartItem) => {
     removeFromCart(item.product.id)
+    setCheckoutSession((session) => session + 1)
     notify('success', `${item.product.name} removed from the cart.`)
     focusScanner()
   }
 
-  const resetCheckout = () => setTenders(NO_TENDERS)
+  const handleClearCart = () => {
+    clearCart()
+    setCheckoutSession((session) => session + 1)
+    setCheckoutOpen(false)
+  }
 
-  const handleCompleteSale = () => {
-    try {
-      const sale = completeSale(payments, OPERATOR_NAMES[currentRole])
-      setReceiptSale(sale)
-      resetCheckout()
-      setToast(null)
-      // Back to the grid, so the next customer's first scan has somewhere to
-      // land once the receipt is dismissed.
-      setTab('products')
-      focusScanner()
-    } catch (error) {
-      notify('error', error instanceof Error ? error.message : 'Could not complete the sale.')
-    }
+  const handleCheckoutClose = () => {
+    setCheckoutOpen(false)
+    window.requestAnimationFrame(() => checkoutButtonRef.current?.focus())
+  }
+
+  const handleCompleteSale = (payments: Tender[]) => {
+    const sale = completeSale(payments, OPERATOR_NAMES[currentRole])
+    setCheckoutSession((session) => session + 1)
+    setCheckoutOpen(false)
+    setReceiptSale(sale)
+    setToast(null)
+    focusScanner()
   }
 
   return (
     <>
-      {/* Everything except the receipt is suppressed when printing. */}
-      <div className="flex h-full min-h-0 flex-col overflow-hidden print:hidden">
-        {/* ------------------------------------------------ mobile tab switch */}
-        {/* Below `lg` the grid and the cart cannot share the width, and a cart
-            parked under a long product list is a screenful of scrolling away
-            from the scan field. One pane at a time, with the unit count on the
-            tab so the cart can be seen filling from across the shop. */}
-        <div className="shrink-0 px-4 pt-4 lg:hidden">
-          <div
-            role="group"
-            aria-label="Register view"
-            className="grid grid-cols-2 gap-1 rounded-lg bg-slate-200 p-1"
-          >
-            <button
-              type="button"
-              aria-pressed={tab === 'products'}
-              onClick={() => setTab('products')}
-              className={`flex min-h-11 items-center justify-center gap-2 rounded-md text-sm font-semibold transition ${
-                tab === 'products'
-                  ? 'bg-brand-900 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <ScanIcon className="h-4 w-4" />
-              Products
-            </button>
-            <button
-              type="button"
-              aria-pressed={tab === 'cart'}
-              onClick={() => setTab('cart')}
-              className={`flex min-h-11 items-center justify-center gap-2 rounded-md text-sm font-semibold transition ${
-                tab === 'cart'
-                  ? 'bg-brand-900 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <CartIcon className="h-4 w-4" />
-              Cart
-              {cartCount > 0 && (
-                <span
-                  className={`rounded-full px-1.5 text-xs tabular-nums ${
-                    tab === 'cart' ? 'bg-white text-brand-900' : 'bg-brand-900 text-white'
-                  }`}
-                >
-                  {cartCount}
-                </span>
-              )}
-            </button>
-          </div>
-        </div>
+      {/* Everything except the receipt is suppressed when printing.
 
-        <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-4 p-4 lg:grid-cols-[3fr_2fr]">
+          Below `lg` this is a scrolling block: the grid grows to its content
+          and the root scrolls it, so the product list and the cart stack into
+          one column a phone can read. It is deliberately *not* a flex column —
+          a flex item with `min-h-0` shrinks to fit a short viewport instead of
+          overflowing, which would quietly clip the cart off a small screen.
+
+          At `lg` the root stops scrolling and the grid becomes a bounded
+          two-column board whose panes scroll internally. */}
+      <div className="h-full min-h-0 overflow-y-auto print:hidden lg:overflow-hidden">
+        <div className="grid min-h-full grid-cols-1 gap-4 p-4 lg:h-full lg:grid-cols-[3fr_2fr] lg:grid-rows-[minmax(0,1fr)]">
           {/* ---------------------------------------------------------- left */}
-          <section
-            className={`${
-              tab === 'products' ? 'flex' : 'hidden'
-            } min-h-0 flex-col gap-4 lg:flex`}
-          >
+          <section className="flex min-h-0 flex-col gap-4">
             <form onSubmit={handleScan} className="shrink-0">
               <div className="relative">
                 <ScanIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
@@ -416,7 +350,14 @@ export default function POS() {
               ))}
             </div>
 
-            <div className="scrollbar-slim min-h-0 flex-1 overflow-y-auto">
+            {/* Sized by content on a phone — `flex-none` on purpose, so the
+                list grows with the basket up to 70 viewport heights and only
+                then scrolls inside itself; a `flex-1` basis of 0 here would
+                collapse it against an auto-height parent. Capped so a long
+                catalogue cannot push the cart a full screen down the page. At
+                `lg` the pane is a fixed-height column again and `flex-1` hands
+                it all the leftover height. */}
+            <div className="scrollbar-slim max-h-[45dvh] overflow-y-auto lg:max-h-none lg:min-h-0 lg:flex-1">
               {visibleProducts.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-slate-300 bg-white/60 px-4 py-10 text-center text-sm text-slate-500">
                   No products match “{scanInput.trim()}”. Press Enter to scan, or clear the field.
@@ -468,13 +409,14 @@ export default function POS() {
 
           {/* --------------------------------------------------------- right */}
           <aside
-            className={`${
-              tab === 'cart' ? 'flex' : 'hidden'
-            } min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm lg:flex`}
+            aria-labelledby="current-sale-title"
+            className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
           >
             <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
               <div>
-                <h2 className="text-sm font-semibold text-slate-900">Current Sale</h2>
+                <h2 id="current-sale-title" className="text-sm font-semibold text-slate-900">
+                  Current Sale
+                </h2>
                 <p className="text-xs text-slate-500 tabular-nums">
                   {cartCount} item{cartCount === 1 ? '' : 's'} · {cart.length} line
                   {cart.length === 1 ? '' : 's'}
@@ -482,7 +424,7 @@ export default function POS() {
               </div>
               <button
                 type="button"
-                onClick={clearCart}
+                onClick={handleClearCart}
                 disabled={cart.length === 0}
                 className="min-h-11 rounded-md border border-slate-300 px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
               >
@@ -490,10 +432,19 @@ export default function POS() {
               </button>
             </div>
 
-            {/* `flex-1` against a bounded aside is what pins the payment panel
-                to the bottom: the lines scroll, the totals and the Complete
-                Sale button never move. */}
-            <div ref={cartListRef} className="scrollbar-slim min-h-0 flex-1 overflow-y-auto">
+            {/* A tall band of its own — between 50 and 70 viewport heights — so
+                several lines with names, unit prices and subtotals sit on
+                screen at once instead of being a scrollbar away. `flex-none` on
+                a phone keeps it content-sized within that band (see the product
+                list above for why `flex-1` would collapse it); on desktop the
+                `flex-1` against a bounded aside keeps the summary and its single
+                checkout action directly beneath the scrollable line list. */}
+            <div
+              ref={cartListRef}
+              role="region"
+              aria-label="Selected cart items"
+              className="scrollbar-slim min-h-[50dvh] max-h-[70dvh] overflow-y-auto lg:max-h-none lg:min-h-0 lg:flex-1"
+            >
               {cart.length === 0 ? (
                 <p className="px-4 py-10 text-center text-sm text-slate-500">
                   Cart is empty. Scan an item or tap a product to begin.
@@ -505,7 +456,7 @@ export default function POS() {
                       key={item.product.id}
                       item={item}
                       available={stockById.get(item.product.id) ?? item.product.stock}
-                      onQuantity={updateCartQuantity}
+                      onQuantity={handleQuantityChange}
                       onRemove={handleRemoveLine}
                     />
                   ))}
@@ -513,163 +464,62 @@ export default function POS() {
               )}
             </div>
 
-            <div className="shrink-0 space-y-3 border-t border-slate-200 bg-slate-50 px-4 py-4">
-              <dl className="space-y-1 text-sm">
-                <div className="flex justify-between">
+            {/* ---------------------------------------------- checkout summary */}
+            {/* Payment starts one deliberate step later: the operator reviews the
+                cart, then opens this summary's single forward action. The totals
+                stay directly beneath the scrolling line list and never compete
+                with tender controls in the main POS view. */}
+            <div
+              className="shrink-0 border-t border-slate-200 bg-slate-50 p-4"
+              aria-labelledby="order-summary-title"
+            >
+              <h3 id="order-summary-title" className="text-sm font-semibold text-slate-900">
+                Order Summary
+              </h3>
+
+              <dl className="mt-3 space-y-2 text-sm">
+                <div className="flex items-center justify-between gap-4">
                   <dt className="text-slate-500">Subtotal</dt>
-                  <dd className="money text-slate-800">{formatNaira(cartSubtotal)}</dd>
+                  <dd className="money font-medium text-slate-800">{formatNaira(cartSubtotal)}</dd>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex items-center justify-between gap-4">
                   <dt className="text-slate-500">VAT (7.5%)</dt>
-                  <dd className="money text-slate-800">{formatNaira(cartVat)}</dd>
+                  <dd className="money font-medium text-slate-800">{formatNaira(cartVat)}</dd>
                 </div>
-                <div className="flex items-baseline justify-between border-t border-slate-200 pt-2">
-                  <dt className="text-base font-semibold text-slate-900">Total</dt>
-                  <dd className="money text-2xl font-bold text-slate-900">
+                <div className="mt-3 flex items-end justify-between gap-4 rounded-lg bg-brand-900 px-4 py-3 text-white shadow-sm">
+                  <dt className="flex flex-col text-[10px] font-semibold uppercase tracking-[0.14em] text-brand-200">
+                    <span>Grand Total</span>
+                    <span className="mt-0.5 text-[11px] font-normal normal-case tracking-normal text-brand-200/70">
+                      Including VAT
+                    </span>
+                  </dt>
+                  <dd className="money text-2xl font-bold tracking-tight sm:text-3xl">
                     {formatNaira(cartTotal)}
                   </dd>
                 </div>
               </dl>
 
-              {cartCount > 0 && (
-                <>
-                  {/* ------------------------------------- running tender total */}
-                  <div>
-                    <div className="mb-1.5 flex items-baseline justify-between gap-2 text-xs">
-                      <span className="font-medium text-slate-600">Total paid</span>
-                      <span className="money tabular-nums text-slate-500">
-                        {formatNaira(paid)} of {formatNaira(cartTotal)}
-                      </span>
-                    </div>
-                    <div
-                      role="progressbar"
-                      aria-label="Share of the bill tendered"
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={Math.round(paidPercent)}
-                      className="h-1.5 overflow-hidden rounded-full bg-slate-200"
-                    >
-                      <div
-                        className={`h-full rounded-full transition-[width] duration-200 ${
-                          // Amber while the bill is still short, green once the
-                          // drawer has enough to settle it.
-                          due < 0 ? 'bg-warning-500' : 'bg-success-600'
-                        }`}
-                        style={{ width: `${paidPercent}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* -------------------------------- split across the three tenders */}
-                  <div className="grid grid-cols-3 gap-2">
-                    {TENDER_METHODS.map((method) => (
-                      <div key={method}>
-                        <label
-                          htmlFor={`tender-${method}`}
-                          className="mb-1 block text-[11px] font-medium text-slate-600"
-                        >
-                          {TENDER_LABELS[method]}
-                        </label>
-                        <input
-                          id={`tender-${method}`}
-                          inputMode="decimal"
-                          autoComplete="off"
-                          value={tenders[method]}
-                          onChange={(event) => setTender(method, event.target.value)}
-                          placeholder="0.00"
-                          className="money min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-sm font-semibold text-slate-900 outline-none transition focus:border-brand-900 focus:ring-2 focus:ring-brand-900/15"
-                        />
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {QUICK_TENDER.map((amount) => (
-                      <button
-                        key={amount}
-                        type="button"
-                        onClick={() => setTender('CASH', String(amount))}
-                        className="min-h-11 rounded-md border border-slate-300 bg-white px-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
-                      >
-                        {formatNaira(amount)}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* ------------------------------- where the sale stands, in one line */}
-                  {/* Every branch below comes from `checkoutBanner`, which owns
-                      the sign of the balance so the panel cannot read an
-                      overpayment as money still owed. */}
-                  {banner?.kind === 'DUE' && (
-                    <div className="flex items-center justify-between gap-2 rounded-md bg-danger-50 px-3 py-2 text-xs font-medium text-danger-800 ring-1 ring-danger-200">
-                      <span>Remaining balance due</span>
-                      <span className="money text-sm font-semibold">
-                        {formatNaira(banner.amount)}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Settled, but the drawer cannot make the change — the rule
-                      gets its own wording rather than "Change due", which would
-                      read as success on a card tender that can never produce it. */}
-                  {banner?.kind === 'BLOCKED' && (
-                    <p className="rounded-md bg-danger-50 px-3 py-2 text-xs font-medium text-danger-800 ring-1 ring-danger-200">
-                      {banner.message}
-                    </p>
-                  )}
-
-                  {banner?.kind === 'CHANGE' && (
-                    <div className="flex items-center justify-between gap-2 rounded-md bg-success-50 px-3 py-2 text-xs font-medium text-success-800 ring-1 ring-success-200">
-                      <span>Change due</span>
-                      <span className="money text-sm font-semibold">
-                        {formatNaira(banner.amount)}
-                      </span>
-                    </div>
-                  )}
-
-                  {banner?.kind === 'EXACT' && (
-                    <div className="flex items-center gap-1.5 rounded-md bg-success-50 px-3 py-2 text-xs font-medium text-success-800 ring-1 ring-success-200">
-                      <CheckIcon className="h-4 w-4 shrink-0" />
-                      Exact amount tendered.
-                    </div>
-                  )}
-                </>
-              )}
-
               <button
+                ref={checkoutButtonRef}
                 type="button"
-                onClick={handleCompleteSale}
-                disabled={!canComplete}
-                className="min-h-12 w-full rounded-lg bg-brand-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+                onClick={() => setCheckoutOpen(true)}
+                disabled={cartCount === 0}
+                aria-haspopup="dialog"
+                aria-expanded={checkoutOpen}
+                aria-controls="checkout-drawer"
+                className="mt-3 flex min-h-14 w-full items-center justify-between gap-3 rounded-lg bg-brand-900 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-brand-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
               >
-                Complete Sale · {formatNaira(cartTotal)}
+                <span>Proceed to Checkout</span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="money text-xs font-semibold sm:text-sm">
+                    {formatNaira(cartTotal)}
+                  </span>
+                  <ArrowRightIcon className="h-4 w-4" />
+                </span>
               </button>
             </div>
           </aside>
         </div>
-
-        {/* ------------------------------------------------- mobile review bar */}
-        {/* Pinned by the shell's flex layout rather than `sticky` — the shell is
-            viewport-locked, so a `shrink-0` last child is always on screen. */}
-        {tab === 'products' && cartCount > 0 && (
-          <div className="shrink-0 border-t border-slate-200 bg-white p-3 shadow-[0_-4px_12px_rgba(15,23,42,0.08)] lg:hidden">
-            <button
-              type="button"
-              onClick={() => setTab('cart')}
-              className="flex min-h-12 w-full items-center justify-between gap-3 rounded-lg bg-brand-900 px-4 text-sm font-semibold text-white transition hover:bg-brand-800"
-            >
-              <span className="flex items-center gap-2">
-                <CartIcon className="h-4 w-4" />
-                {cartCount} item{cartCount === 1 ? '' : 's'}
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="money tabular-nums">{formatNaira(cartTotal)}</span>
-                Review &amp; pay
-                <ArrowRightIcon className="h-4 w-4" />
-              </span>
-            </button>
-          </div>
-        )}
       </div>
 
       {toast && (
@@ -690,6 +540,17 @@ export default function POS() {
           </p>
         </div>
       )}
+
+      <CheckoutDrawer
+        key={checkoutSession}
+        open={checkoutOpen}
+        cartCount={cartCount}
+        subtotal={cartSubtotal}
+        vat={cartVat}
+        total={cartTotal}
+        onClose={handleCheckoutClose}
+        onComplete={handleCompleteSale}
+      />
 
       <ThermalReceiptModal
         sale={receiptSale}

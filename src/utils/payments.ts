@@ -18,6 +18,47 @@ import { round2 } from './money'
 export const TENDER_METHODS: PaymentMethod[] = ['CASH', 'CARD', 'TRANSFER']
 
 /**
+ * Characters a reference is built from.
+ *
+ * `I`, `O`, `0` and `1` are deliberately missing: a reference gets read aloud
+ * down a phone line to someone at a call centre, and those four are the ones
+ * that get misheard.
+ */
+const REFERENCE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+function randomToken(length: number): string {
+  let token = ''
+  for (let index = 0; index < length; index += 1) {
+    token += REFERENCE_ALPHABET[Math.floor(Math.random() * REFERENCE_ALPHABET.length)]
+  }
+  return token
+}
+
+/**
+ * The code the customer must quote when sending a transfer.
+ *
+ * Generated once, when the transfer dialog opens, and shown before any money
+ * moves — that is the whole point of it. It then travels onto the tender, so
+ * the reference on the receipt is the one the customer actually used.
+ */
+export const makeTransferReference = () => `TRF-${randomToken(8)}`
+
+/** The approval code an acquirer prints on the card slip. */
+export const makeApprovalCode = () => `AUTH ${randomToken(6)}`
+
+/**
+ * The most a non-cash method can be charged.
+ *
+ * A terminal is told an exact figure to take, so it is never asked for more
+ * than the bill — and unlike cash it cannot hand the difference back. Keeping
+ * this here means the card and transfer dialogs both refuse an overcharge with
+ * the same arithmetic, and neither can drift from what the till expects.
+ */
+export function maxChargeable(total: number, paidElsewhere: number): number {
+  return round2(Math.max(0, round2(total - paidElsewhere)))
+}
+
+/**
  * Drops the entries that are not real money and rounds what is left.
  *
  * A blank field parses to `NaN` and a half-typed "-" to a negative; neither is
@@ -26,7 +67,14 @@ export const TENDER_METHODS: PaymentMethod[] = ['CASH', 'CARD', 'TRANSFER']
 export function normaliseTenders(payments: readonly Tender[]): Tender[] {
   return payments
     .filter((tender) => Number.isFinite(tender.amount) && tender.amount > 0)
-    .map((tender) => ({ method: tender.method, amount: round2(tender.amount) }))
+    .map((tender) => ({
+      method: tender.method,
+      amount: round2(tender.amount),
+      // Dropped rather than carried as `undefined`: a tender with no reference
+      // should serialise without the key, so a stored sale stays the same shape
+      // it has always been.
+      ...(tender.reference ? { reference: tender.reference } : {}),
+    }))
 }
 
 /** Everything handed over, summed across methods. */

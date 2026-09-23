@@ -69,8 +69,8 @@ thing that would be swapped for a router, and every screen is already self-conta
 to sit behind one.
 
 The shell is **viewport-locked**: the top bar never scrolls away and each screen owns its own
-scrolling. That is what keeps a screen's action button — the till's **Complete Sale**, a
-catalogue row's **Adjust Stock** — reachable at the bottom of a phone without hunting for it.
+scrolling. That is what keeps a screen's action area — the till's **Proceed to Checkout**, a
+catalogue row's **Adjust Stock** — reachable without hunting for it on a phone.
 
 ---
 
@@ -185,21 +185,22 @@ returns to the hamburger when it closes and moves into the drawer when it opens.
 
 ### The till on a small screen
 
-The two-column till (product grid | cart) does not fit a phone, so it becomes a **two-tab
-switch**: **Products** and **Cart**, with a live item count on the cart tab. Only one is on
-screen at a time, so neither is squeezed.
+Below `lg`, the product grid and current sale stack into one scrolling column rather than
+being squeezed side by side. The selected-items pane keeps a generous minimum height and
+scrolls internally, so several cart rows remain readable without forcing the product grid
+into a tiny strip.
 
-Once the cart has something in it, a **review bar** is pinned to the bottom of the Products
-tab showing the item count and the running total — *N items · ₦X · Review & pay*. Tapping it
-switches to the Cart tab. The **Complete Sale** button sits at the bottom of the Cart tab, so
-after taking payment the cashier never scrolls to find it.
+The order summary follows the selected items. **Proceed to Checkout** opens a full-height
+checkout drawer from the right (full-screen on a phone), where the operator chooses **Cash**,
+**Card** or **Transfer**. Card and transfer processing continue in focused payment dialogs;
+**Complete Sale** stays pinned at the bottom of the drawer.
 
 ### Touch targets
 
-Every control meant to be tapped is at least **44×44px** — the steppers, the quick-tender
-chips, the tab switch, the drawer rows, the toolbar buttons. The quantity steppers on a cart
-line are joined into one bordered group rather than sitting as two separate buttons, so a
-thumb cannot land in the gap between them and miss.
+Every control meant to be tapped is at least **44×44px** — the steppers, quick-tender chips,
+payment tabs, drawer rows and toolbar buttons. The quantity steppers on a cart line are
+joined into one bordered group rather than sitting as two separate buttons, so a thumb cannot
+land in the gap between them and miss.
 
 ### The tables
 
@@ -291,9 +292,9 @@ the visible products; **All** clears the filter.
    | --- | --- |
    | Subtotal | shelf prices |
    | VAT (7.5%) | 7.5% of subtotal |
-   | **Total** | subtotal + VAT |
+   | **Grand Total** | subtotal + VAT |
 
-4. Take payment — see below.
+4. Select **Proceed to Checkout**, then take payment in the drawer — see below.
 
 ### Adjusting a cart line
 
@@ -316,33 +317,37 @@ accepted. It can never drift from the truth.
 
 ### Taking payment
 
-A bill can be **split across cash, card and transfer at the same time** — routine at a
+Payment is deliberately isolated from the main register. **Proceed to Checkout** opens a
+right-side drawer (full-screen on a phone) with the order summary and the **Cash**, **Card**
+and **Transfer** tabs. Nothing on the cart screen exposes a tender field by default.
+
+A bill can still be **split across cash, card and transfer at the same time** — routine at a
 Nigerian till, where a customer might put ₦4,000 down in notes and settle the balance on a
-card.
+card. Use any combination of methods:
 
-There are three tender fields, one per method. Fill in any combination:
+1. **Cash:** type the notes received, use a quick-tender chip, or choose the exact remaining
+   balance. **Card:** the card flow opens a simulated terminal, accepts the charge, processes
+   it, and returns an approval code. **Transfer:** the transfer flow shows the store account
+   and a unique reference, then checks the amount received against a simulated ledger.
+2. Watch **paid** beside the progress bar. Every recorded tender appears in **Payments Taken**
+   and can be voided or replaced.
+3. The status line always says where the sale stands:
 
-1. Type into **Cash**, **Card** and/or **Transfer**. Each is a live field — the panel
-   recalculates as you type.
-2. Watch **Total paid** above the fields: `₦4,000.00 of ₦10,000.00`, over a progress bar that
-   fills as the bill is covered.
-3. Watch the line underneath, which always says exactly where the sale stands:
-
-   | Situation | The panel reads |
+   | Situation | The drawer reads |
    | --- | --- |
-   | Anything still outstanding | **Remaining balance due** ₦X (red) |
+   | Anything still outstanding | **Remaining balance due** ₦X (amber) |
    | Paid in full, change owed | **Change due** ₦X (green) |
-   | Paid to the kobo | ✓ **Exact amount tendered.** (green) |
+   | Paid to the kobo | ✓ **Exact amount tendered** (green) |
    | Change larger than the cash put down | the rule that blocks it, in red — see below |
 
 **Quick cash tools:** four chips — **₦1,000**, **₦5,000**, **₦10,000**, **₦20,000** — drop a
 note straight into the **Cash** field. Two taps settles most cash sales.
 
 **Strict submit guard:** **Complete Sale · ₦…** stays disabled until the tenders cover the
-grand total. It also stays disabled while the cart is empty.
+grand total and any change can actually come from cash.
 
 > **Why change can only come out of the cash.** Paying a ₦10,000 bill with ₦20,000 on a card
-> would leave ₦10,000 "change" the panel could not honestly offer — a card terminal cannot
+> would leave ₦10,000 "change" the drawer could not honestly offer — a card terminal cannot
 > hand back notes, and a transfer certainly cannot. The guard refuses that combination and
 > says so. It is the kind of rule that looks pedantic until you work out how much a drawer
 > loses over a week without it.
@@ -354,7 +359,7 @@ grand total. It also stays disabled while the cart is empty.
 - writes one **SALE** movement per line into the audit ledger, reasoned
   `Sold on receipt REC-10023`
 - advances the receipt counter
-- clears the cart and resets the tender fields
+- clears the cart and resets the checkout drawer for the next sale
 - opens the receipt
 
 The sale records **every tender taken**, not just a summary: the receipt prints the split, and
@@ -602,7 +607,8 @@ Worth knowing before someone asks, so the demo holds up:
 | **Escape** | Mobile drawer | Closes it |
 | Any typing | POS Register | Filters the product grid |
 | Click a product card | POS Register | Adds one unit |
-| Click a quick-tender chip | POS Register | Drops that note into the Cash field |
+| **Proceed to Checkout** | Cart summary | Opens the payment drawer |
+| Click a quick-tender chip | Checkout drawer | Drops that note into the Cash field |
 | Click the **Stock Alerts** card | Dashboard | Jumps to Inventory |
 | Click **View Receipt** | Dashboard | Reopens that sale's thermal receipt |
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { ReactElement } from 'react'
 import { useStore } from '../context/StoreContext'
+import { STORE } from '../data/store'
 import type { Sale } from '../types/pos'
 import { formatNaira } from '../utils/format'
 
@@ -8,10 +9,6 @@ interface ThermalReceiptModalProps {
   sale: Sale | null
   onClose: () => void
 }
-
-const STORE_NAME = 'SUPERMARKET POS'
-const STORE_ADDRESS = '123 Commercial Avenue, Lagos'
-const STORE_PHONE = 'Tel: +234 800 123 4567'
 
 /** Receipts read `21/09/2026 14:42` — compact, unambiguous, unpadded locale-free. */
 function formatReceiptDate(iso: string): string {
@@ -143,9 +140,9 @@ export function ThermalReceiptModal({ sale, onClose }: ThermalReceiptModalProps)
       >
         <article className="w-full rounded-sm bg-white px-4 py-5 font-mono text-[11px] leading-relaxed text-slate-900 shadow-xl ring-1 ring-slate-300 print:rounded-none print:px-[4mm] print:pt-[2mm] print:pb-[8mm] print:shadow-none print:ring-0">
           <header className="text-center">
-            <h2 className="text-[14px] font-bold tracking-[0.12em]">{STORE_NAME}</h2>
-            <p className="mt-1 text-[10px]">{STORE_ADDRESS}</p>
-            <p className="text-[10px]">{STORE_PHONE}</p>
+            <h2 className="text-[14px] font-bold tracking-[0.12em]">{STORE.name}</h2>
+            <p className="mt-1 text-[10px]">{STORE.address}</p>
+            <p className="text-[10px]">Tel: {STORE.phone}</p>
           </header>
 
           <Divider />
@@ -211,11 +208,24 @@ export function ThermalReceiptModal({ sale, onClose }: ThermalReceiptModalProps)
             </div>
             {isSplit &&
               payments.map((tender) => (
-                <div key={tender.method} className="flex justify-between gap-2 pl-2">
-                  <span>{tender.method}</span>
-                  <span className="tabular-nums">{formatNaira(tender.amount)}</span>
+                <div key={tender.method}>
+                  <div className="flex justify-between gap-2 pl-2">
+                    <span>{tender.method}</span>
+                    <span className="tabular-nums">{formatNaira(tender.amount)}</span>
+                  </div>
+                  {/* The approval code or transfer reference the customer can
+                      quote later — printed under the line it belongs to. */}
+                  {tender.reference && (
+                    <p className="pl-2 text-[9px] text-slate-600">{tender.reference}</p>
+                  )}
                 </div>
               ))}
+            {!isSplit && payments[0]?.reference && (
+              <div className="flex justify-between gap-2 pl-2">
+                <span>Ref</span>
+                <span>{payments[0].reference}</span>
+              </div>
+            )}
             {change > 0 && (
               <>
                 <div className="flex justify-between gap-2">
